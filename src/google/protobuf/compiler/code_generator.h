@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <map>
 
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
@@ -155,11 +156,6 @@ class PROTOC_EXPORT CodeGenerator {
           FeatureSet, TypeTraitsT, field_type, is_packed>& extension) {
     return ::google::protobuf::internal::InternalFeatureHelper::GetUnresolvedFeatures(
         descriptor, extension);
-  }
-
-  // Retrieves the edition of a built file descriptor.
-  static Edition GetEdition(const FileDescriptor& file) {
-    return ::google::protobuf::internal::InternalFeatureHelper::GetEdition(file);
   }
 };
 

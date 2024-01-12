@@ -8,6 +8,7 @@
 #include "google/protobuf/compiler/csharp/csharp_generator.h"
 
 #include <sstream>
+#include <map>
 
 #include "google/protobuf/compiler/code_generator.h"
 #include "google/protobuf/descriptor.h"
@@ -18,6 +19,8 @@
 #include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/io/printer.h"
 #include "google/protobuf/io/zero_copy_stream.h"
+
+std::map<std::string, int> g_messages; // Keys{ 1:不剔除 2:剔除序列化 3:剔除反序列化 4:整条message剔除 } 
 
 namespace google {
 namespace protobuf {
@@ -35,6 +38,57 @@ void GenerateFile(const FileDescriptor* file, io::Printer* printer,
                   const Options* options) {
   ReflectionClassGenerator reflectionClassGenerator(file, options);
   reflectionClassGenerator.Generate(printer);
+}
+
+void RecursiveStripping(const Descriptor* message, int strippingType)
+{
+  for(int i = 0; i < message->field_count(); i++)
+  {
+    const FieldDescriptor* field = message->field(i);
+    if(field->type() == FieldDescriptor::TYPE_MESSAGE)
+    {
+      const Descriptor* fieldType = field -> message_type();
+      std::cout << fieldType->name() << "\n";
+      std::string subMessageName = fieldType->name();
+      g_messages[subMessageName] = strippingType;
+      RecursiveStripping(fieldType, strippingType);
+    }
+  }
+}
+
+void GetStrippingMap(const FileDescriptor* file)
+{
+  if (file->message_type_count() > 0) {
+    std::cout << "message num: " << file->message_type_count() << "\n";
+    for (int i = 0; i < file->message_type_count(); i++) {
+      const Descriptor* message = file->message_type(i);
+      std::string messageName = message->name();
+      int strippingType; // 1:不剔除 2:剔除序列化 3:剔除反序列化 4:整条message剔除
+
+      if(messageName.substr(0, 2) == "GC")
+        strippingType = 4;
+      else if(messageName.substr(0, 2) == "CG")
+        strippingType = 3;
+      else
+        strippingType = 1; // 目前只处理CG和GC
+
+      g_messages[messageName] = strippingType;
+    }
+
+    for (int i = 0; i < file->message_type_count(); i++) {
+      const Descriptor* message = file->message_type(i);
+      std::string messageName = message->name();
+      int strippingType = g_messages[messageName]; 
+
+      RecursiveStripping(message, strippingType);
+    }
+  }
+
+  // for(const auto& message : g_messages) {
+  //   const Descriptor* descriptor = DescriptorPool::generated_pool()->FindMessageTypeByName(message.first);
+  //   std::cout << "name: " << descriptor->name() << ", type: " << message.second << "\n";
+  //   RecursiveStripping(descriptor, message.second);
+  // }
 }
 
 bool Generator::Generate(const FileDescriptor* file,
@@ -77,8 +131,14 @@ bool Generator::Generate(const FileDescriptor* file,
       generator_context->Open(filename));
   io::Printer printer(output.get(), '$');
 
-  GenerateFile(file, &printer, &cli_options);
+  GetStrippingMap(file);
+  // for (const auto& message : g_messages) {
+  //   std::cout << "name: " << message.first << ", type: " << message.second << "\n";
+  // }
 
+  GenerateFile(file, &printer, &cli_options);
+ 
+  
   return true;
 }
 

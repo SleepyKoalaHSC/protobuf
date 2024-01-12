@@ -29,6 +29,8 @@
 // Must be last.
 #include "google/protobuf/port_def.inc"
 
+extern std::map<std::string, int> g_messages;
+
 namespace google {
 namespace protobuf {
 namespace compiler {
@@ -246,7 +248,7 @@ void MessageGenerator::Generate(io::Printer* printer) {
 
   // Standard methods
   GenerateFrameworkMethods(printer);
-  GenerateMessageSerializationMethods(printer);
+  GenerateMessageSerializationMethods(printer, descriptor_->name());
   GenerateMergingMethods(printer);
 
   if (has_extension_ranges_) {
@@ -299,6 +301,7 @@ void MessageGenerator::Generate(io::Printer* printer) {
       EnumGenerator enumGenerator(descriptor_->enum_type(i), this->options());
       enumGenerator.Generate(printer);
     }
+    
     for (int i = 0; i < descriptor_->nested_type_count(); i++) {
       // Don't generate nested types for maps...
       if (!IsMapEntryMessage(descriptor_->nested_type(i))) {
@@ -499,6 +502,7 @@ void MessageGenerator::GenerateMessageSerializationMethods(
     io::Printer* printer) {
   WriteGeneratedCodeAttributes(printer);
   printer->Print("public void WriteTo(pb::CodedOutputStream output) {\n");
+
   printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
   printer->Indent();
   printer->Print("output.WriteRawMessage(this);\n");
@@ -548,6 +552,78 @@ void MessageGenerator::GenerateMessageSerializationMethods(
   printer->Print("}\n\n");
 }
 
+void MessageGenerator::GenerateMessageSerializationMethods(
+    io::Printer* printer, std::string varName) {
+  WriteGeneratedCodeAttributes(printer);
+  printer->Print("public void WriteTo(pb::CodedOutputStream output) {\n");
+
+  if(varName.substr(0, 2) == "GC")
+  {
+    printer->Print("  return;\n");
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print(
+        "void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) "
+        "{\n");
+    printer->Print("  return;\n");
+    printer->Print("}\n");
+    printer->Print("#endif\n\n");
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print("public int CalculateSize() {\n");
+    printer->Print("  return;\n");
+    printer->Print("}\n\n");
+  }
+  else{
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    printer->Indent();
+    printer->Print("output.WriteRawMessage(this);\n");
+    printer->Outdent();
+    printer->Print("#else\n");
+    printer->Indent();
+    GenerateWriteToBody(printer, false);
+    printer->Outdent();
+    printer->Print("#endif\n");
+    printer->Print("}\n\n");
+
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print(
+        "void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) "
+        "{\n");
+    printer->Indent();
+    GenerateWriteToBody(printer, true);
+    printer->Outdent();
+    printer->Print("}\n");
+    printer->Print("#endif\n\n");
+
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print("public int CalculateSize() {\n");
+    printer->Indent();
+    printer->Print("int size = 0;\n");
+    for (int i = 0; i < descriptor_->field_count(); i++) {
+      std::unique_ptr<FieldGeneratorBase> generator(
+          CreateFieldGeneratorInternal(descriptor_->field(i)));
+      generator->GenerateSerializedSizeCode(printer);
+    }
+
+    if (has_extension_ranges_) {
+      printer->Print(
+          "if (_extensions != null) {\n"
+          "  size += _extensions.CalculateSize();\n"
+          "}\n");
+    }
+
+    printer->Print(
+        "if (_unknownFields != null) {\n"
+        "  size += _unknownFields.CalculateSize();\n"
+        "}\n");
+
+    printer->Print("return size;\n");
+    printer->Outdent();
+    printer->Print("}\n\n");
+  }
+}
+
 void MessageGenerator::GenerateWriteToBody(io::Printer* printer,
                                            bool use_write_context) {
   // Serialize all the fields
@@ -586,81 +662,113 @@ void MessageGenerator::GenerateMergingMethods(io::Printer* printer) {
   vars["class_name"] = class_name();
 
   WriteGeneratedCodeAttributes(printer);
-  printer->Print(vars, "public void MergeFrom($class_name$ other) {\n");
-  printer->Indent();
-  printer->Print(
-      "if (other == null) {\n"
-      "  return;\n"
-      "}\n");
-  // Merge non-oneof fields, treating optional proto3 fields as normal fields
-  for (int i = 0; i < descriptor_->field_count(); i++) {
-    const FieldDescriptor* field = descriptor_->field(i);
-    if (field->real_containing_oneof()) {
-      continue;
-    }
-    std::unique_ptr<FieldGeneratorBase> generator(
-        CreateFieldGeneratorInternal(field));
-    generator->GenerateMergingCode(printer);
-  }
-  // Merge oneof fields (for non-synthetic oneofs)
-  for (int i = 0; i < descriptor_->real_oneof_decl_count(); ++i) {
-    const OneofDescriptor* oneof = descriptor_->oneof_decl(i);
-    vars["name"] = UnderscoresToCamelCase(oneof->name(), false);
-    vars["property_name"] = UnderscoresToCamelCase(oneof->name(), true);
-    printer->Print(vars, "switch (other.$property_name$Case) {\n");
+  
+  
+  if(g_messages[vars["class_name"]] == 3)
+  {
+    std::cout << "name: " << vars["class_name"] << ", type: " << g_messages[vars["class_name"]] << "\n";
+    printer->Print(vars, "public void MergeFrom($class_name$ other) {\n");
     printer->Indent();
-    for (int j = 0; j < oneof->field_count(); j++) {
-      const FieldDescriptor* field = oneof->field(j);
-      vars["oneof_case_name"] = GetOneofCaseName(field);
-      printer->Print(vars,
-                     "case $property_name$OneofCase.$oneof_case_name$:\n");
-      printer->Indent();
+    printer->Print("return;\n");
+    printer->Outdent();
+    printer->Print("}\n\n");
+
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print("public void MergeFrom(pb::CodedInputStream input) {\n");
+    printer->Indent();
+    printer->Print("return;\n");
+    printer->Outdent();
+    printer->Print("}\n\n");
+
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print(
+        "void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) "
+        "{\n");
+    printer->Indent();
+    printer->Print("return;\n");
+    printer->Outdent();
+    printer->Print("}\n");  // method
+    printer->Print("#endif\n\n");
+  }
+  else{
+    printer->Print(vars, "public void MergeFrom($class_name$ other) {\n");
+    printer->Indent();
+    printer->Print(
+        "if (other == null) {\n"
+        "  return;\n"
+        "}\n");
+    // Merge non-oneof fields, treating optional proto3 fields as normal fields
+    for (int i = 0; i < descriptor_->field_count(); i++) {
+      const FieldDescriptor* field = descriptor_->field(i);
+      if (field->real_containing_oneof()) {
+        continue;
+      }
       std::unique_ptr<FieldGeneratorBase> generator(
           CreateFieldGeneratorInternal(field));
       generator->GenerateMergingCode(printer);
-      printer->Print("break;\n");
-      printer->Outdent();
     }
+    // Merge oneof fields (for non-synthetic oneofs)
+    for (int i = 0; i < descriptor_->real_oneof_decl_count(); ++i) {
+      const OneofDescriptor* oneof = descriptor_->oneof_decl(i);
+      vars["name"] = UnderscoresToCamelCase(oneof->name(), false);
+      vars["property_name"] = UnderscoresToCamelCase(oneof->name(), true);
+      printer->Print(vars, "switch (other.$property_name$Case) {\n");
+      printer->Indent();
+      for (int j = 0; j < oneof->field_count(); j++) {
+        const FieldDescriptor* field = oneof->field(j);
+        vars["oneof_case_name"] = GetOneofCaseName(field);
+        printer->Print(vars,
+                      "case $property_name$OneofCase.$oneof_case_name$:\n");
+        printer->Indent();
+        std::unique_ptr<FieldGeneratorBase> generator(
+            CreateFieldGeneratorInternal(field));
+        generator->GenerateMergingCode(printer);
+        printer->Print("break;\n");
+        printer->Outdent();
+      }
+      printer->Outdent();
+      printer->Print("}\n\n");
+    }
+    // Merge extensions
+    if (has_extension_ranges_) {
+      printer->Print(
+          "pb::ExtensionSet.MergeFrom(ref _extensions, other._extensions);\n");
+    }
+
+    // Merge unknown fields.
+    printer->Print(
+        "_unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, "
+        "other._unknownFields);\n");
+
     printer->Outdent();
     printer->Print("}\n\n");
-  }
-  // Merge extensions
-  if (has_extension_ranges_) {
+
+    WriteGeneratedCodeAttributes(printer);
+    printer->Print("public void MergeFrom(pb::CodedInputStream input) {\n");
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    printer->Indent();
+    printer->Print("input.ReadRawMessage(this);\n");
+    printer->Outdent();
+    printer->Print("#else\n");
+    printer->Indent();
+    GenerateMainParseLoop(printer, false);
+    printer->Outdent();
+    printer->Print("#endif\n");
+    printer->Print("}\n\n");
+
+    printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
+    WriteGeneratedCodeAttributes(printer);
     printer->Print(
-        "pb::ExtensionSet.MergeFrom(ref _extensions, other._extensions);\n");
+        "void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) "
+        "{\n");
+    printer->Indent();
+    GenerateMainParseLoop(printer, true);
+    printer->Outdent();
+    printer->Print("}\n");  // method
+    printer->Print("#endif\n\n");
   }
-
-  // Merge unknown fields.
-  printer->Print(
-      "_unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, "
-      "other._unknownFields);\n");
-
-  printer->Outdent();
-  printer->Print("}\n\n");
-
-  WriteGeneratedCodeAttributes(printer);
-  printer->Print("public void MergeFrom(pb::CodedInputStream input) {\n");
-  printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
-  printer->Indent();
-  printer->Print("input.ReadRawMessage(this);\n");
-  printer->Outdent();
-  printer->Print("#else\n");
-  printer->Indent();
-  GenerateMainParseLoop(printer, false);
-  printer->Outdent();
-  printer->Print("#endif\n");
-  printer->Print("}\n\n");
-
-  printer->Print("#if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE\n");
-  WriteGeneratedCodeAttributes(printer);
-  printer->Print(
-      "void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) "
-      "{\n");
-  printer->Indent();
-  GenerateMainParseLoop(printer, true);
-  printer->Outdent();
-  printer->Print("}\n");  // method
-  printer->Print("#endif\n\n");
+  
 }
 
 void MessageGenerator::GenerateMainParseLoop(io::Printer* printer,

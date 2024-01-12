@@ -24,6 +24,8 @@
 // Must be last.
 #include "google/protobuf/port_def.inc"
 
+extern std::map<std::string, int> g_messages;
+
 namespace google {
 namespace protobuf {
 namespace compiler {
@@ -83,6 +85,9 @@ void ReflectionClassGenerator::Generate(io::Printer* printer) {
   if (file_->message_type_count() > 0) {
     printer->Print("#region Messages\n");
     for (int i = 0; i < file_->message_type_count(); i++) {
+      if(g_messages[file_->message_type(i)->name()] == 4)
+        continue;
+
       MessageGenerator messageGenerator(file_->message_type(i), this->options());
       messageGenerator.Generate(printer);
     }
@@ -233,6 +238,10 @@ void ReflectionClassGenerator::WriteGeneratedCodeInfo(const Descriptor* descript
     printer->Print("null, ");
     return;
   }
+
+  if(g_messages[descriptor->name()] == 4)
+    return;  
+
   // Generated message type
   printer->Print("new pbr::GeneratedClrTypeInfo(typeof($type_name$), $type_name$.Parser, ", "type_name", GetClassName(descriptor));
 
